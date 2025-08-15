@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>本地数字人 Demo（第一步：加载3D模型）</title>
+<style>
+  :root{--bg:#0b1220;--card:#121a2b;--edge:#26314d;--fg:#e9eef8;--muted:#8aa0c6;--brand:#4cc9f0}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:980px;margin:40px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--edge);border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+  h1{margin:0 0 10px 0;font-size:22px}
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .avatar{flex:0 0 280px;display:grid;place-items:center;gap:8px}
+  /* --- 新增：为 canvas 添加样式 --- */
+  #avatar-canvas{width:280px;height:280px;border-radius:12px;background:#0e1626;border:1px solid var(--edge);cursor:grab;}
+  #avatar-canvas:active{cursor:grabbing;}
+  /* --- 结束 --- */
+  .controls{flex:1;min-width:280px;display:flex;flex-direction:column;gap:12px}
+  textarea{width:100%;min-height:150px;border-radius:12px;border:1px solid var(--edge);background:#0e1626;color:var(--fg);padding:12px;resize:vertical}
+  .bar{display:flex;gap:8px;flex-wrap:wrap}
+  select,input[type="range"],button{border-radius:10px;border:1px solid var(--edge);background:#0e1626;color:var(--fg);padding:10px 12px}
+  button{cursor:pointer}
+  .kv{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:14px}
+  .subtitle{min-height:1.4em;color:var(--muted);text-align:center}
+  .note{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>本地数字人 Demo（第一步：加载3D模型）</h1>
+    <div class="row">
+      <div class="avatar">
+        <canvas id="avatar-canvas"></canvas>
+        <div class="subtitle" id="subtitle">（可用鼠标拖动旋转模型）</div>
+      </div>
+
+      <div class="controls">
+        <textarea id="text" placeholder="在这里输入要让数字人朗读的文字……">大家好，我是一位纯前端的数字人演示。你输入任何文字，我都会立刻开口说话，并显示字幕。</textarea>
+
+        <div class="bar">
+          <button id="speak">🗣️ 开口说话</button>
+          <button id="pause">⏸ 暂停/继续</button>
+          <button id="stop">⏹ 停止</button>
+        </div>
+
+        <div class="bar">
+          <div class="kv" style="flex:1">
+            声音：
+            <select id="voice" style="flex:1"><option>载入中…</option></select>
+          </div>
+        </div>
+
+        <div class="bar">
+          <div class="kv" style="flex:1">语速
+            <input id="rate" type="range" min="0.5" max="1.6" step="0.05" value="1">
+            <span id="rateV" class="note">1.00</span>
+          </div>
+          <div class="kv" style="flex:1">音调
+            <input id="pitch" type="range" min="0.6" max="1.4" step="0.05" value="1">
+            <span id="pitchV" class="note">1.00</span>
+          </div>
+          <div class="kv" style="flex:1">音量
+            <input id="vol" type="range" min="0" max="1" step="0.05" value="1">
+            <span id="volV" class="note">1.00</span>
+          </div>
+        </div>
+
+        <div class="note">提示：该 DEMO 仍使用浏览器内置的 <code>SpeechSynthesis</code>。下一步我们将接入AI大脑和更高级的语音服务。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  const canvas = document.getElementById('avatar-canvas');
+  const subtitle = document.getElementById('subtitle');
+
+  // 1. 场景、相机和渲染器
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+  camera.position.set(0, 0.5, 2.0); // 调整相机位置以更好地观察模型
+
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; // 改善光照效果
+  renderer.outputEncoding = THREE.sRGBEncoding;
+
+  // 2. 光源
+  const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+  scene.add(ambientLight);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+  directionalLight.position.set(1, 1, 2); // 调整灯光方向
+  scene.add(directionalLight);
+
+  // 3. 控制器（允许鼠标拖动）
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.5, 0); // 将控制器焦点设置在模型中心
+  controls.update();
+
+  // 4. 加载模型
+  const loader = new GLTFLoader();
+  loader.load(
+    // 确保 scene.glb 文件与此 HTML 文件在同一目录下
+    'scene.glb',
+    (gltf) => {
+      scene.add(gltf.scene);
+      console.log('模型加载成功!', gltf.scene);
+      subtitle.textContent = '模型加载成功！可拖动旋转。';
+    },
+    (xhr) => {
+      // (可选) 加载进度
+      const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+      subtitle.textContent = `模型加载中... ${percent}%`;
+    },
+    (error) => {
+      console.error('模型加载失败:', error);
+      subtitle.textContent = '错误：模型加载失败！';
+    }
+  );
+
+  // 5. 渲染循环
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update(); // 更新控制器
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // 响应式画布
+  window.addEventListener('resize', () => {
+    camera.aspect = canvas.clientWidth / canvas.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+  });
+</script>
+
+<script>
+/* ------------------ 工具与状态 ------------------ */
+// 移除了 elMouth, startMouth, stopMouth
+const elSub   = document.getElementById('subtitle');
+const elText  = document.getElementById('text');
+const elVoice = document.getElementById('voice');
+const elRate  = document.getElementById('rate');
+const elPitch = document.getElementById('pitch');
+const elVol   = document.getElementById('vol');
+const elRateV = document.getElementById('rateV');
+const elPitchV= document.getElementById('pitchV');
+const elVolV  = document.getElementById('volV');
+
+let voices = [];
+let currentUtter = null;
+
+/* ------------------ 语音初始化 ------------------ */
+function loadVoices(){
+  voices = speechSynthesis.getVoices();
+  voices.sort((a,b)=>{
+    const aCN = /zh|Chinese/i.test(a.lang)||/Chinese/.test(a.name);
+    const bCN = /zh|Chinese/i.test(b.lang)||/Chinese/.test(b.name);
+    if (aCN && !bCN) return -1;
+    if (!aCN && bCN) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  elVoice.innerHTML = "";
+  voices.forEach((v,i)=>{
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${v.name} [${v.lang}]`;
+    elVoice.appendChild(opt);
+  });
+  const idx = voices.findIndex(v=>/zh|Chinese/i.test(v.lang) || /Chinese/.test(v.name));
+  elVoice.value = idx>=0 ? idx : 0;
+}
+loadVoices();
+if (speechSynthesis.onvoiceschanged !== undefined) {
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+/* ------------------ 控件显示数值 ------------------ */
+function bindRange(r, label){
+  const sync = ()=>label.textContent = Number(r.value).toFixed(2);
+  r.addEventListener('input', sync); sync();
+}
+bindRange(elRate,  elRateV);
+bindRange(elPitch, elPitchV);
+bindRange(elVol,   elVolV);
+
+/* ------------------ 动作：说话 ------------------ */
+function speakText(text){
+  if (!text.trim()) return;
+  stop();
+  // 不再更新字幕，因为3D模块会处理加载状态
+  // elSub.textContent = text; 
+
+  const u = new SpeechSynthesisUtterance(text);
+  const v = voices[Number(elVoice.value)||0];
+  if (v) u.voice = v;
+
+  u.rate  = Number(elRate.value);
+  u.pitch = Number(elPitch.value);
+  u.volume= Number(elVol.value);
+  
+  u.onerror = (e)=> { console.error(e); alert('语音合成失败：' + e.error); };
+
+  currentUtter = u;
+  speechSynthesis.speak(u);
+}
+
+/* ------------------ 控制按钮 ------------------ */
+function stop(){
+  if (speechSynthesis.speaking || speechSynthesis.pending){
+    speechSynthesis.cancel();
+  }
+  currentUtter = null;
+}
+function pauseOrResume(){
+  if (!speechSynthesis.speaking) return;
+  if (speechSynthesis.paused){
+    speechSynthesis.resume();
+  }else{
+    speechSynthesis.pause();
+  }
+}
+
+/* ------------------ 绑定 UI ------------------ */
+document.getElementById('speak').onclick = ()=> speakText(elText.value);
+document.getElementById('pause').onclick = pauseOrResume;
+document.getElementById('stop').onclick  = stop;
+
+elText.addEventListener('keydown', (e)=>{
+  if (e.ctrlKey && e.key === 'Enter') speakText(elText.value);
+});
+</script>
+</body>
+</html>
