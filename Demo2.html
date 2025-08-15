@@ -120,6 +120,21 @@
     'scene.glb',
     (gltf) => {
       scene.add(gltf.scene);
+      gltf.scene.position.y -= 0.3;
+
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+
+      center.y -= 0.1;
+      controls.target.copy(center);
+      controls.update();
+
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      const cameraZ = maxDim / 2 / Math.tan(fov / 2);
+      camera.position.set(center.x, center.y, cameraZ);
+
       console.log('模型加载成功!', gltf.scene);
       subtitle.textContent = '模型加载成功！可拖动旋转。';
     },
