@@ -67,7 +67,7 @@
           </div>
         </div>
 
-        <div class="note">提示：该 DEMO 仍使用浏览器内置的 <code>SpeechSynthesis</code>。下一步我们将接入AI大脑和更高级的语音服务。</div>
+        <div class="note">提示：该 DEMO 现通过后端 <code>Piper</code> 服务合成语音。</div>
       </div>
     </div>
   </div>
@@ -168,34 +168,31 @@ const elVol   = document.getElementById('vol');
 const elRateV = document.getElementById('rateV');
 const elPitchV= document.getElementById('pitchV');
 const elVolV  = document.getElementById('volV');
-
 let voices = [];
-let currentUtter = null;
+let audio = null;
 
 /* ------------------ 语音初始化 ------------------ */
-function loadVoices(){
-  voices = speechSynthesis.getVoices();
-  voices.sort((a,b)=>{
-    const aCN = /zh|Chinese/i.test(a.lang)||/Chinese/.test(a.name);
-    const bCN = /zh|Chinese/i.test(b.lang)||/Chinese/.test(b.name);
-    if (aCN && !bCN) return -1;
-    if (!aCN && bCN) return 1;
-    return a.name.localeCompare(b.name);
-  });
-  elVoice.innerHTML = "";
-  voices.forEach((v,i)=>{
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = `${v.name} [${v.lang}]`;
-    elVoice.appendChild(opt);
-  });
-  const idx = voices.findIndex(v=>/zh|Chinese/i.test(v.lang) || /Chinese/.test(v.name));
-  elVoice.value = idx>=0 ? idx : 0;
+async function loadVoices(){
+  try {
+    const res = await fetch("/voices");
+    voices = await res.json();
+    elVoice.innerHTML = "";
+    voices.forEach((v,i)=>{
+      const opt = document.createElement('option');
+      if (typeof v === 'string') {
+        opt.value = v;
+        opt.textContent = v;
+      } else {
+        opt.value = v.id || i;
+        opt.textContent = v.name || v.id || i;
+      }
+      elVoice.appendChild(opt);
+    });
+  } catch(e) {
+    console.error('载入声音失败', e);
+  }
 }
 loadVoices();
-if (speechSynthesis.onvoiceschanged !== undefined) {
-  speechSynthesis.onvoiceschanged = loadVoices;
-}
 
 /* ------------------ 控件显示数值 ------------------ */
 function bindRange(r, label){
@@ -207,39 +204,50 @@ bindRange(elPitch, elPitchV);
 bindRange(elVol,   elVolV);
 
 /* ------------------ 动作：说话 ------------------ */
-function speakText(text){
+async function speakText(text){
   if (!text.trim()) return;
   stop();
-  // 不再更新字幕，因为3D模块会处理加载状态
-  // elSub.textContent = text; 
 
-  const u = new SpeechSynthesisUtterance(text);
-  const v = voices[Number(elVoice.value)||0];
-  if (v) u.voice = v;
+  const params = {
+    text,
+    voice: elVoice.value,
+    length_scale: Number(elRate.value),
+    noise_scale: Number(elPitch.value),
+    noise_w_scale: Number(elVol.value)
+  };
 
-  u.rate  = Number(elRate.value);
-  u.pitch = Number(elPitch.value);
-  u.volume= Number(elVol.value);
-  
-  u.onerror = (e)=> { console.error(e); alert('语音合成失败：' + e.error); };
-
-  currentUtter = u;
-  speechSynthesis.speak(u);
+  try {
+    const res = await fetch("/speak", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (!res.ok) throw new Error(res.statusText);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    if (!audio) audio = new Audio();
+    audio.src = url;
+    await audio.play();
+  } catch(e) {
+    console.error('语音合成失败', e);
+    alert('语音合成失败');
+  }
 }
 
 /* ------------------ 控制按钮 ------------------ */
 function stop(){
-  if (speechSynthesis.speaking || speechSynthesis.pending){
-    speechSynthesis.cancel();
+  if (audio){
+    audio.pause();
+    audio.currentTime = 0;
   }
-  currentUtter = null;
 }
+
 function pauseOrResume(){
-  if (!speechSynthesis.speaking) return;
-  if (speechSynthesis.paused){
-    speechSynthesis.resume();
+  if (!audio) return;
+  if (audio.paused){
+    audio.play();
   }else{
-    speechSynthesis.pause();
+    audio.pause();
   }
 }
 
